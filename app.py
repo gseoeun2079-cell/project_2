@@ -5,12 +5,13 @@ import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# 1. 페이지 설정 및 세션 상태 초기화
-st.set_page_config(page_title="TMDB API 연동 영화 추천 시스템", layout="wide")
+# 1. 페이지 설정 및 세션 상태 초기화 (직관적인 공식 명칭 반영)
+st.set_page_config(page_title="3대 알고리즘 영화 추천 시스템", layout="wide")
 
 # ⚠️ 여기에 발급받은 TMDB v3 API Key를 입력하세요!
 TMDB_API_KEY = "71f533a402be87b54aea626f2b1ef567" 
 
+# 세션 상태 변수 초기화 (페이지 이동 및 동적 데이터 저장용)
 if 'current_page' not in st.session_state:
     st.session_state['current_page'] = 'main'
 if 'custom_movies' not in st.session_state:
@@ -47,8 +48,9 @@ def search_movie_tmdb(query):
 # 🏠 화면 0: 메인 페이지 (API 영화 검색 및 등록)
 # ==========================================
 if st.session_state['current_page'] == 'main':
-    st.title("🎬 실제 영화 API(TMDB) 연동 추천 시스템")
-    st.write("실제 존재하는 영화를 검색하여 나만의 추천 데이터베이스를 실시간으로 빌드하세요.")
+    st.title("🎬 3대 알고리즘 영화 추천 시스템")
+    st.subheader("콘텐츠 기반 · 협업 필터링 · 하이브리드 모델을 활용한 영화 개인화 플랫폼")
+    st.write("실제 TMDB 영화 API 데이터와 사용자의 동적 입력 데이터를 기반으로 3가지 알고리즘을 실시간 작동 및 비교 검증합니다.")
     st.markdown("---")
     
     st.subheader("📥 1단계: API 연동 실시간 영화 등록")
@@ -80,7 +82,6 @@ if st.session_state['current_page'] == 'main':
         if len(st.session_state['custom_movies']) == 0:
             st.info("아직 등록된 영화가 없습니다. 왼쪽에 실제 영화를 검색해 채워보세요! (서로 다른 장르로 4개 이상 등록 권장)")
         else:
-            # 포스터 이미지를 포함하여 정렬 배치
             movies_list = st.session_state['custom_movies']
             cols = st.columns(min(len(movies_list), 4))
             for idx, row in movies_list.iterrows():
@@ -88,8 +89,10 @@ if st.session_state['current_page'] == 'main':
                     if row['poster']:
                         st.image(row['poster'], width=100)
                     st.caption(f"**{row['title']}**")
-                    
-            if st.button("🗑️ 영화 데이터 전체 초기화", style="margin-top:20px;"):
+            
+            # TypeError 유발하던 style= 매개변수 완전히 삭제 및 빈 줄 여백 대체
+            st.write("")
+            if st.button("🗑️ 영화 데이터 전체 초기화"):
                 st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
                 st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}}
                 st.rerun()
