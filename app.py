@@ -5,10 +5,9 @@ import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# 1. 페이지 설정 및 세션 상태 초기화 (직관적인 공식 명칭 반영)
+# 1. 페이지 설정 및 세션 상태 초기화
 st.set_page_config(page_title="3대 알고리즘 영화 추천 시스템", layout="wide")
 
-# ⚠️ 여기에 발급받은 TMDB v3 API Key를 입력하세요!
 TMDB_API_KEY = "71f533a402be87b54aea626f2b1ef567" 
 
 # 세션 상태 변수 초기화 (페이지 이동 및 동적 데이터 저장용)
@@ -19,7 +18,7 @@ if 'custom_movies' not in st.session_state:
 if 'custom_ratings' not in st.session_state:
     st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}}
 
-# --- TMDB API 호출 함수 ---
+# TMDB API 호출 함수
 def search_movie_tmdb(query):
     if TMDB_API_KEY == "여기에_발급받은_API키를_넣으세요" or not TMDB_API_KEY:
         st.error("코드 상단의 TMDB_API_KEY 변수에 실제 API 키를 입력해야 작동합니다!")
@@ -44,20 +43,18 @@ def search_movie_tmdb(query):
         return {"title": title, "features": f"{genres} {plot}", "poster": poster_url}
     return None
 
-# ==========================================
 # 🏠 화면 0: 메인 페이지 (API 영화 검색 및 등록)
-# ==========================================
 if st.session_state['current_page'] == 'main':
-    st.title("🎬 3대 알고리즘 영화 추천 시스템")
-    st.subheader("콘텐츠 기반 · 협업 필터링 · 하이브리드 모델을 활용한 영화 개인화 플랫폼")
+    st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
+    st.subheader("콘텐츠 기반 · 협업 필터링 · 하이브리드 모델을 활용한 영화 플랫폼")
     st.write("실제 TMDB 영화 API 데이터와 사용자의 동적 입력 데이터를 기반으로 3가지 알고리즘을 실시간 작동 및 비교 검증합니다.")
     st.markdown("---")
     
-    st.subheader("📥 1단계: API 연동 실시간 영화 등록")
+    st.subheader("📥 API 연동 실시간 영화 등록")
     col_in1, col_in2 = st.columns([1, 2])
     
     with col_in1:
-        search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 인셉션 또는 아바타")
+        search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 토이스토리 또는 주토피아")
         
         if st.button("🔍 영화 검색 및 등록", use_container_width=True):
             if search_query:
