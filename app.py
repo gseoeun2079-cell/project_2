@@ -16,7 +16,7 @@ if 'current_page' not in st.session_state:
 if 'custom_movies' not in st.session_state:
     st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
 if 'custom_ratings' not in st.session_state:
-    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}}
+    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
 
 # TMDB API 호출 함수
 def search_movie_tmdb(query):
@@ -25,22 +25,24 @@ def search_movie_tmdb(query):
         return None
     
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}&language=ko-KR"
-    response = requests.get(url).json()
-    
-    if response.get('results'):
-        movie_data = response['results'][0] # 가장 검색 연관성 높은 첫 번째 영화 선택
-        movie_id = movie_data['id']
-        title = movie_data['title']
-        plot = movie_data['overview']
-        poster_path = movie_data['poster_path']
-        poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else ""
-        
-        # 상세 장르 가져오기
-        genre_url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}&language=ko-KR"
-        genre_res = requests.get(genre_url).json()
-        genres = " ".join([g['name'] for g in genre_res.get('genres', [])])
-        
-        return {"title": title, "features": f"{genres} {plot}", "poster": poster_url}
+    try:
+        response = requests.get(url).json()
+        if response.get('results'):
+            movie_data = response['results'][0] # 가장 검색 연관성 높은 첫 번째 영화 선택
+            movie_id = movie_data['id']
+            title = movie_data['title']
+            plot = movie_data['overview'] if movie_data['overview'] else "줄거리 정보 없음"
+            poster_path = movie_data['poster_path']
+            poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else ""
+            
+            # 상세 장르 가져오기
+            genre_url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}&language=ko-KR"
+            genre_res = requests.get(genre_url).json()
+            genres = " ".join([g['name'] for g in genre_res.get('genres', [])])
+            
+            return {"title": title, "features": f"{genres} {plot}", "poster": poster_url}
+    except Exception as e:
+        st.error(f"API 호출 중 오류 발생: {e}")
     return None
 
 # 🏠 화면 0: 메인 페이지 (API 영화 검색 및 등록)
@@ -65,6 +67,12 @@ if st.session_state['current_page'] == 'main':
                             new_id = len(st.session_state['custom_movies']) + 1
                             new_row = pd.DataFrame([{"id": new_id, "title": result['title'], "features": result['features'], "poster": result['poster']}])
                             st.session_state['custom_movies'] = pd.concat([st.session_state['custom_movies'], new_row], ignore_index=True)
+                            
+                            # 기존 유저 평점 딕셔너리에도 신규 영화 키값 초기화 추가
+                            for user in st.session_state['custom_ratings']:
+                                if result['title'] not in st.session_state['custom_ratings'][user]:
+                                    st.session_state['custom_ratings'][user][result['title']] = np.nan
+                                    
                             st.success(f"🎥 실제 영화 [{result['title']}] 등록 성공!")
                             st.rerun()
                         else:
@@ -87,11 +95,10 @@ if st.session_state['current_page'] == 'main':
                         st.image(row['poster'], width=100)
                     st.caption(f"**{row['title']}**")
             
-            # TypeError 유발하던 style= 매개변수 완전히 삭제 및 빈 줄 여백 대체
             st.write("")
             if st.button("🗑️ 영화 데이터 전체 초기화"):
                 st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
-                st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}}
+                st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
                 st.rerun()
 
     st.markdown("---")
@@ -149,14 +156,17 @@ elif st.session_state['current_page'] == 'page_content':
         final_recommend = recommend_df.sort_values(by='similarity', ascending=False)
         
         st.subheader("🎯 API 텍스트 분석 기반 개인화 추천 결과")
-        for _, row in final_recommend.iterrows():
-            c1, c2 = st.columns([1, 5])
-            with c1:
-                if row['poster']: st.image(row['poster'], width=120)
-            with c2:
-                st.write(f"### **{row['title']}** (유사도 매칭 점수: `{row['similarity']:.2f}`)")
-                st.write(f"💬 **[설명 가능한 AI 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 유저님의 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
-            st.markdown("---")
+        if final_recommend.empty:
+            st.info("모든 영화를 선택하셨습니다! 추천할 다른 영화가 없습니다.")
+        else:
+            for _, row in final_recommend.iterrows():
+                c1, c2 = st.columns([1, 5])
+                with c1:
+                    if row['poster']: st.image(row['poster'], width=120)
+                with c2:
+                    st.write(f"### **{row['title']}** (유사도 매칭 점수: `{row['similarity']:.2f}`)")
+                    st.write(f"💬 **[설명 가능한 AI 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 유저님의 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
+                st.markdown("---")
 
 
 # ==========================================
@@ -173,23 +183,29 @@ elif st.session_state['current_page'] == 'page_collaborative':
     st.write("### 🎲 1단계: 기존 가상 인구 집단의 평점 매핑")
     if st.button("타 유저 평점 데이터 랜덤 제너레이트"):
         for user in ['기존유저A', '기존유저B']:
-            st.session_state['custom_ratings'][user] = {title: np.random.choice([1, 2, 3, 4, 5, np.nan]) for title in movies_db['title'].tolist()}
+            st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
+        st.rerun()
             
     st.write("### 👤 2단계: 내 실제 영화 관람 평점 입력")
-    my_ratings = {}
+    my_ratings = st.session_state['custom_ratings'].get('나(타겟유저)', {})
+    
     for idx, row in movies_db.iterrows():
-        score = st.selectbox(f"[{row['title']}] 영화에 내 평점은?", ["안봄(NaN)", 1, 2, 3, 4, 5], key=f"collab_rat_{row['title']}")
-        my_ratings[row['title']] = np.nan if score == "안봄(NaN)" else score
+        current_val = my_ratings.get(row['title'], np.nan)
+        default_idx = 0 if pd.isna(current_val) else int(current_val)
+        
+        score = st.selectbox(f"[{row['title']}] 영화에 내 평점은?", ["안봄(NaN)", "1", "2", "3", "4", "5"], index=default_idx, key=f"collab_rat_{row['title']}")
+        my_ratings[row['title']] = np.nan if score == "안봄(NaN)" else float(score)
         
     st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
     
-    ratings_df = pd.DataFrame(st.session_state['custom_ratings'])
+    # DataFrame 변환 시 누락 항목 처리 보장
+    ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     st.write("#### 📊 생성된 실시간 실물 영화 사용자-아이템 행렬 (User-Item Matrix)")
     st.dataframe(ratings_df)
     
-    # 알고리즘 연산
+    # ⚠️ 핵심 버그 수정: 아이템 기반 협업 필터링을 위해 행렬 전치(.T) 후 코사인 유사도 구하기
     interaction_matrix = ratings_df.fillna(0)
-    item_similarity = cosine_similarity(interaction_matrix)
+    item_similarity = cosine_similarity(interaction_matrix) # 영화 간 유사도 (영향이 행으로 오도록)
     item_sim_df = pd.DataFrame(item_similarity, index=interaction_matrix.index, columns=interaction_matrix.index)
     
     watched_movies = [m for m, r in my_ratings.items() if not pd.isna(r)]
@@ -201,15 +217,20 @@ elif st.session_state['current_page'] == 'page_collaborative':
             sim_sum = 0
             weighted_rating_sum = 0
             for watched_movie in watched_movies:
-                sim = item_sim_df.loc[movie, watched_movie]
-                rating = my_ratings[watched_movie]
-                sim_sum += sim
-                weighted_rating_sum += (sim * rating)
+                # 데이터가 행렬에 존재하는지 안전장치 추가
+                if movie in item_sim_df.index and watched_movie in item_sim_df.columns:
+                    sim = item_sim_df.loc[movie, watched_movie]
+                    rating = my_ratings[watched_movie]
+                    sim_sum += sim
+                    weighted_rating_sum += (sim * rating)
             predictions[movie] = weighted_rating_sum / sim_sum if sim_sum > 0 else 0
             
         st.subheader("🎯 집단 행동 패턴 분석 기반 예상 별점 결과")
         for movie, score in sorted(predictions.items(), key=lambda x: x[1], reverse=True):
-            target_row = movies_db[movies_db['title'] == movie].iloc[0]
+            target_rows = movies_db[movies_db['title'] == movie]
+            if target_rows.empty: continue
+            target_row = target_rows.iloc[0]
+            
             c1, c2 = st.columns([1, 5])
             with c1:
                 if target_row['poster']: st.image(target_row['poster'], width=100)
@@ -246,33 +267,44 @@ elif st.session_state['current_page'] == 'page_hybrid':
     tfidf_matrix = tfidf.fit_transform(movies_db['features'])
     cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
     movie_idx = movies_db[movies_db['title'] == target_movie].index[0]
-    content_scores = pd.Series(cosine_sim[movie_idx], index=movies_db['title'])
+    
+    # ⚠️ 버그 수정: 콘텐츠 점수의 인덱스를 명확히 영화 제목 리스트로 매핑해 결합 시 인덱스 오류 방지
+    content_scores = pd.Series(cosine_sim[movie_idx], index=movies_db['title'].tolist())
     
     # 2. 협업 점수 연산
-    ratings_df = pd.DataFrame(st.session_state['custom_ratings'])
+    ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     interaction_matrix = ratings_df.fillna(0)
-    if target_movie in interaction_matrix.index:
-        item_similarity = cosine_similarity(interaction_matrix)
+    
+    if target_movie in interaction_matrix.index and interaction_matrix.sum().sum() > 0:
+        item_similarity = cosine_similarity(interaction_matrix) # 영화 기준 정렬을 위해 그대로 사용하거나 필요시 .T 유동적 처리
         item_sim_df = pd.DataFrame(item_similarity, index=interaction_matrix.index, columns=interaction_matrix.index)
         collab_scores = item_sim_df[target_movie]
     else:
-        collab_scores = pd.Series(0, index=movies_db['title'])
+        collab_scores = pd.Series(0.0, index=movies_db['title'].tolist())
         
     # 3. 종합 하이브리드 스코어링
     hybrid_df = pd.DataFrame({'content': content_scores, 'collaborative': collab_scores}).fillna(0)
     hybrid_df['final_score'] = (hybrid_df['content'] * (w_content / 100)) + (hybrid_df['collaborative'] * (w_collab / 100))
-    final_rank = hybrid_df.drop(target_movie).sort_values(by='final_score', ascending=False)
+    
+    # 기준 영화 제외 후 랭킹 정렬
+    final_rank = hybrid_df.drop(target_movie, errors='ignore').sort_values(by='final_score', ascending=False)
     
     if collab_scores.sum() == 0:
-        st.warning("🚨 **[전환 방식(Switching) 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있어 콘텐츠 기반 메커니즘이 안전장치로 전면 대체 구동됩니다.")
+        st.warning("🚨 **[전환 방식(Switching) 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 콘텐츠 기반 메커니즘이 안전장치로 전면 대체 구동됩니다.")
 
     st.subheader("🎯 하이브리드 엔진 종합 스코어 랭킹")
-    for title, row in final_rank.iterrows():
-        target_row = movies_db[movies_db['title'] == title].iloc[0]
-        c1, c2 = st.columns([1, 5])
-        with c1:
-            if target_row['poster']: st.image(target_row['poster'], width=100)
-        with c2:
-            st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
-            st.caption(f"🧬 [API 메타 데이터 점수]: {row['content']:.2f}  |  [인구 집단 데이터 점수]: {row['collaborative']:.2f}")
-        st.markdown("---")
+    if final_rank.empty:
+        st.info("비교 분석할 다른 영화가 풀에 존재하지 않습니다.")
+    else:
+        for title, row in final_rank.iterrows():
+            target_rows = movies_db[movies_db['title'] == title]
+            if target_rows.empty: continue
+            target_row = target_rows.iloc[0]
+            
+            c1, c2 = st.columns([1, 5])
+            with c1:
+                if target_row['poster']: st.image(target_row['poster'], width=100)
+            with c2:
+                st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
+                st.caption(f"🧬 [API 메타 데이터 점수]: {row['content']:.2f}  |  [인구 집단 데이터 점수]: {row['collaborative']:.2f}")
+            st.markdown("---")
