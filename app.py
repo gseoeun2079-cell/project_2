@@ -17,6 +17,8 @@ if 'custom_movies' not in st.session_state:
     st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
 if 'custom_ratings' not in st.session_state:
     st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+if 'search_result' not in st.session_state:
+    st.session_state['search_result'] = None
 
 # TMDB API 호출 함수
 def search_movie_tmdb(query):
@@ -58,29 +60,46 @@ if st.session_state['current_page'] == 'main':
     with col_in1:
         search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 토이스토리 또는 주토피아")
         
-        if st.button("🔍 영화 검색 및 등록", use_container_width=True):
+        if st.button("🔍 영화 검색하기", use_container_width=True):
             if search_query:
-                with st.spinner("TMDB API에서 영화 데이터를 가져오는 중..."):
+                with st.spinner("TMDB API에서 영화 데이터를 찾는 중..."):
                     result = search_movie_tmdb(search_query)
                     if result:
-                        if result['title'] not in st.session_state['custom_movies']['title'].tolist():
-                            new_id = len(st.session_state['custom_movies']) + 1
-                            new_row = pd.DataFrame([{"id": new_id, "title": result['title'], "features": result['features'], "poster": result['poster']}])
-                            st.session_state['custom_movies'] = pd.concat([st.session_state['custom_movies'], new_row], ignore_index=True)
-                            
-                            # 기존 유저 평점 딕셔너리에도 신규 영화 키값 초기화 추가
-                            for user in st.session_state['custom_ratings']:
-                                if result['title'] not in st.session_state['custom_ratings'][user]:
-                                    st.session_state['custom_ratings'][user][result['title']] = np.nan
-                                    
-                            st.success(f"🎥 실제 영화 [{result['title']}] 등록 성공!")
-                            st.rerun()
-                        else:
-                            st.warning("이미 등록된 영화입니다.")
+                        st.session_state['search_result'] = result
                     else:
                         st.error("영화 데이터를 찾지 못했습니다. 제목을 정확히 입력해 주세요.")
+                        st.session_state['search_result'] = None
             else:
                 st.error("검색할 영화 제목을 입력하세요.")
+        
+        if st.session_state['search_result']:
+            res = st.session_state['search_result']
+            st.markdown("---")
+            st.write("### 🔍 검색된 영화 확인")
+            
+            preview_col1, preview_col2 = st.columns([1, 2])
+            with preview_col1:
+                if res['poster']:
+                    st.image(res['poster'], width=120)
+            with preview_col2:
+                st.write(f"#### **{res['title']}**")
+                st.caption(f"**데이터 내용:** {res['features'][:120]}...")
+            
+            if st.button(f"➕ [{res['title']}]을 영화 풀에 등록하기", type="primary", use_container_width=True):
+                if res['title'] not in st.session_state['custom_movies']['title'].tolist():
+                    new_id = len(st.session_state['custom_movies']) + 1
+                    new_row = pd.DataFrame([{"id": new_id, "title": res['title'], "features": res['features'], "poster": res['poster']}])
+                    st.session_state['custom_movies'] = pd.concat([st.session_state['custom_movies'], new_row], ignore_index=True)
+                    
+                    for user in st.session_state['custom_ratings']:
+                        if res['title'] not in st.session_state['custom_ratings'][user]:
+                            st.session_state['custom_ratings'][user][res['title']] = np.nan
+                            
+                    st.success(f"🎉 [{res['title']}] 등록 성공!")
+                    st.session_state['search_result'] = None
+                    st.rerun()
+                else:
+                    st.warning("⚠️ 이미 등록된 영화입니다.")
                 
     with col_in2:
         st.write("**현재 API로 구축된 내 영화 풀 (Pool):**")
@@ -89,16 +108,30 @@ if st.session_state['current_page'] == 'main':
         else:
             movies_list = st.session_state['custom_movies']
             cols = st.columns(min(len(movies_list), 4))
+            
             for idx, row in movies_list.iterrows():
                 with cols[idx % 4]:
                     if row['poster']:
                         st.image(row['poster'], width=100)
                     st.caption(f"**{row['title']}**")
+                    
+                    # 🌟 [추가] 영화 개별 삭제 버튼 구현
+                    if st.button("❌ 삭제", key=f"del_{row['title']}_{idx}", use_container_width=True, type="secondary"):
+                        # 1. 영화 데이터프레임에서 제외
+                        st.session_state['custom_movies'] = st.session_state['custom_movies'][st.session_state['custom_movies']['title'] != row['title']].reset_index(drop=True)
+                        
+                        # 2. 유저별 평점 사전 파일에서도 연쇄적으로 해당 영화 명단 삭제
+                        for user in st.session_state['custom_ratings']:
+                            if row['title'] in st.session_state['custom_ratings'][user]:
+                                del st.session_state['custom_ratings'][user][row['title']]
+                                
+                        st.rerun()
             
             st.write("")
-            if st.button("🗑️ 영화 데이터 전체 초기화"):
+            if st.button("🗑️ 영화 데이터 전체 초기화", use_container_width=True):
                 st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
                 st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+                st.session_state['search_result'] = None
                 st.rerun()
 
     st.markdown("---")
@@ -198,14 +231,12 @@ elif st.session_state['current_page'] == 'page_collaborative':
         
     st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
     
-    # DataFrame 변환 시 누락 항목 처리 보장
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     st.write("#### 📊 생성된 실시간 실물 영화 사용자-아이템 행렬 (User-Item Matrix)")
     st.dataframe(ratings_df)
     
-    # ⚠️ 핵심 버그 수정: 아이템 기반 협업 필터링을 위해 행렬 전치(.T) 후 코사인 유사도 구하기
     interaction_matrix = ratings_df.fillna(0)
-    item_similarity = cosine_similarity(interaction_matrix) # 영화 간 유사도 (영향이 행으로 오도록)
+    item_similarity = cosine_similarity(interaction_matrix)
     item_sim_df = pd.DataFrame(item_similarity, index=interaction_matrix.index, columns=interaction_matrix.index)
     
     watched_movies = [m for m, r in my_ratings.items() if not pd.isna(r)]
@@ -217,7 +248,6 @@ elif st.session_state['current_page'] == 'page_collaborative':
             sim_sum = 0
             weighted_rating_sum = 0
             for watched_movie in watched_movies:
-                # 데이터가 행렬에 존재하는지 안전장치 추가
                 if movie in item_sim_df.index and watched_movie in item_sim_df.columns:
                     sim = item_sim_df.loc[movie, watched_movie]
                     rating = my_ratings[watched_movie]
@@ -268,7 +298,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
     cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
     movie_idx = movies_db[movies_db['title'] == target_movie].index[0]
     
-    # ⚠️ 버그 수정: 콘텐츠 점수의 인덱스를 명확히 영화 제목 리스트로 매핑해 결합 시 인덱스 오류 방지
     content_scores = pd.Series(cosine_sim[movie_idx], index=movies_db['title'].tolist())
     
     # 2. 협업 점수 연산
@@ -276,7 +305,7 @@ elif st.session_state['current_page'] == 'page_hybrid':
     interaction_matrix = ratings_df.fillna(0)
     
     if target_movie in interaction_matrix.index and interaction_matrix.sum().sum() > 0:
-        item_similarity = cosine_similarity(interaction_matrix) # 영화 기준 정렬을 위해 그대로 사용하거나 필요시 .T 유동적 처리
+        item_similarity = cosine_similarity(interaction_matrix)
         item_sim_df = pd.DataFrame(item_similarity, index=interaction_matrix.index, columns=interaction_matrix.index)
         collab_scores = item_sim_df[target_movie]
     else:
@@ -286,7 +315,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
     hybrid_df = pd.DataFrame({'content': content_scores, 'collaborative': collab_scores}).fillna(0)
     hybrid_df['final_score'] = (hybrid_df['content'] * (w_content / 100)) + (hybrid_df['collaborative'] * (w_collab / 100))
     
-    # 기준 영화 제외 후 랭킹 정렬
     final_rank = hybrid_df.drop(target_movie, errors='ignore').sort_values(by='final_score', ascending=False)
     
     if collab_scores.sum() == 0:
