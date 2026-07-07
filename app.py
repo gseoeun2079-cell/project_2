@@ -6,7 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # 1. 페이지 설정 및 세션 상태 초기화
-st.set_page_config(page_title="3대 알고리즘 영화 추천 시스템", layout="wide")
+st.set_page_config(page_title="3가지의 알고리즘 영화 추천 시스템", layout="wide")
 
 TMDB_API_KEY = "71f533a402be87b54aea626f2b1ef567" 
 
@@ -47,7 +47,7 @@ def search_movie_tmdb(query):
         st.error(f"API 호출 중 오류 발생: {e}")
     return None
 
-# 🏠 화면 0: 메인 페이지 (API 영화 검색 및 등록)
+#화면 0: 메인 페이지 (API 영화 검색 및 등록)
 if st.session_state['current_page'] == 'main':
     st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
     st.subheader("콘텐츠 기반 · 협업 필터링 · 하이브리드 모델을 활용한 영화 플랫폼")
