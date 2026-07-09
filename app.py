@@ -224,7 +224,7 @@ elif st.session_state['current_page'] == 'page_content':
         recommend_df = recommend_df[~recommend_df['title'].isin(user_history)]
         final_recommend = recommend_df.sort_values(by='similarity', ascending=False)
         
-        st.subheader("🎯 API 텍스트 분석 기반 개인화 추천 결과")
+        st.subheader("🎯 줄거리 및 장르 데이터 분석을 통한 추천 결과")
         if final_recommend.empty:
             st.info("모든 영화를 선택하셨습니다! 추천할 다른 영화가 없습니다.")
         else:
