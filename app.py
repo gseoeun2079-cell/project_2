@@ -4,6 +4,7 @@ import numpy as np
 import requests
 import json
 import os
+import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -17,7 +18,6 @@ def load_local_data():
                 data = json.load(f)
                 df = pd.DataFrame(data.get('movies', []))
                 
-                # 컬럼 누락 방지 로직
                 for col in ["id", "title", "genre", "overview", "features", "poster"]:
                     if col not in df.columns:
                         df[col] = "" if col != "id" else 0
@@ -93,7 +93,7 @@ def search_movie_tmdb(query):
     return None
 
 # ==========================================
-# 📄 화면 0: 메인 페이지 (원래 디자인 원본)
+# 📄 화면 0: 메인 페이지 (완전 랜덤 5종 생성)
 # ==========================================
 if st.session_state['current_page'] == 'main':
     st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
@@ -102,10 +102,54 @@ if st.session_state['current_page'] == 'main':
     st.markdown("---")
     
     st.subheader("📥 API 연동 실시간 영화 등록")
+    
+    # 🎯 극적 무작위 추출 버튼 (누를 때마다 달라짐)
+    if st.button("🎲 발표용 극적 데이터셋 랜덤 생성 (극단적 장르 5종 무작위 추출)", type="primary", use_container_width=True):
+        # 5개 극단적 장르 그룹
+        group1 = ["토이 스토리", "주토피아", "인사이드 아웃", "슈렉"]
+        group2 = ["인터스텔라", "인셉션", "마션", "테넷"]
+        group3 = ["곤지암", "겟 아웃", "컨저링", "파묘"]
+        group4 = ["라라랜드", "비포 선라이즈", "어바웃 타임", "뷰티 인사이드"]
+        group5 = ["어벤져스", "다크 나이트", "범죄도시", "매트릭스"]
+        
+        # 각 그룹별로 1개씩 무작위 선정
+        selected_queries = [
+            random.choice(group1),
+            random.choice(group2),
+            random.choice(group3),
+            random.choice(group4),
+            random.choice(group5)
+        ]
+        
+        new_movies = []
+        with st.spinner(f"랜덤 추출된 영화 5종 ({', '.join(selected_queries)}) 데이터를 TMDB API에서 검색 중..."):
+            for q in selected_queries:
+                m_info = search_movie_tmdb(q)
+                if m_info:
+                    new_movies.append(m_info)
+        
+        if new_movies:
+            df_new = pd.DataFrame(new_movies)
+            df_new['id'] = range(1, len(df_new) + 1)
+            st.session_state['custom_movies'] = df_new
+            
+            t = [m['title'] for m in new_movies]
+            # 추출된 5개 영화에 대한 극단적인 유저 평점 자동 구성
+            st.session_state['custom_ratings'] = {
+                '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0, t[3]: 5.0, t[4]: 4.0},
+                '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0, t[3]: 2.0, t[4]: 5.0},
+                '나': {t[0]: 5.0, t[1]: np.nan, t[2]: np.nan, t[3]: 4.0, t[4]: np.nan}
+            }
+            save_local_data()
+            st.success(f"🎉 극적 랜덤 5종 ({', '.join(t)}) 영화 보관함 등록 완료!")
+            st.rerun()
+
+    st.write("")
+    
     col_in1, col_in2 = st.columns([1, 2])
     
     with col_in1:
-        search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 토이 스토리 또는 주토피아")
+        search_query = st.text_input("영화 제목 개별 검색 (한국어/영어):", placeholder="예: 토이 스토리 또는 주토피아")
         
         if st.button("🔍 영화 검색하기", use_container_width=True):
             if search_query:
@@ -336,7 +380,7 @@ elif st.session_state['current_page'] == 'page_collaborative':
 
 
 # ==========================================
-# 📄 화면 3: 하이브리드 추천 페이지 (완벽 에러 예방 방어 코드 반영)
+# 📄 화면 3: 하이브리드 추천 페이지
 # ==========================================
 elif st.session_state['current_page'] == 'page_hybrid':
     if st.button("⬅️ 메인 페이지로 돌아가기"):
@@ -353,7 +397,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
     target_movie = st.selectbox("추천 알고리즘의 기준점이 될 메인 영화 선택:", movies_db['title'].tolist())
     
     try:
-        # 0. Empty Vocabulary 완벽 방지 안전 TF-IDF 연산 함수
         def safe_tfidf_sim(series_data):
             cleaned_data = series_data.fillna('').astype(str).str.strip()
             if cleaned_data.str.cat().strip() == "":
@@ -365,7 +408,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
             except ValueError:
                 return np.zeros((len(series_data), len(series_data)))
 
-        # 1. 안전하게 각각의 유사도 연산
         cosine_sim = safe_tfidf_sim(movies_db['features'])
         
         genre_data = movies_db['genre'] if 'genre' in movies_db.columns else pd.Series(['']*len(movies_db))
@@ -380,7 +422,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
         genre_scores = pd.Series(genre_sim[movie_idx], index=movies_db['title'].tolist())
         plot_scores = pd.Series(plot_sim[movie_idx], index=movies_db['title'].tolist())
         
-        # 2. 협업 필터링 유사도 연산
         ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
         interaction_matrix = ratings_df.fillna(0)
         
@@ -391,7 +432,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
         else:
             collab_scores = pd.Series(0.0, index=movies_db['title'].tolist())
             
-        # 3. 스코어 통합
         hybrid_df = pd.DataFrame({
             'content': content_scores,
             'genre': genre_scores,
@@ -417,16 +457,11 @@ elif st.session_state['current_page'] == 'page_hybrid':
                 with c2:
                     st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
                     
-                    # 상세 API 점수 표시
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("🏷️ 장르 유사 점수", f"{row['genre']:.2f}")
                     m2.metric("📖 줄거리 유사 점수", f"{row['plot']:.2f}")
                     m3.metric("🧬 메타데이터 점수", f"{row['content']:.2f}")
                     m4.metric("👥 인구집단 점수", f"{row['collaborative']:.2f}")
-                    
-                    g_info = target_row.get('genre', '정보없음')
-                    o_info = target_row.get('overview', '')[:60]
-                    st.caption(f"📌 **[API 텍스트 분석]:** 장르({g_info}) | 줄거리({o_info}...)")
                 st.markdown("---")
     except Exception as e:
         st.error(f"연산 중 오류가 발생했습니다: {e}")
