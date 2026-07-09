@@ -47,10 +47,9 @@ if 'search_result' not in st.session_state:
 if 'custom_movies' not in st.session_state:
     load_local_data()
 
-# 💡 중요: 평점 데이터는 파일에 저장하지 않고, 창을 켤 때마다 항상 빈 상태로 임시 초기화합니다.
+# 평점 데이터는 파일에 저장하지 않고, 창을 켤 때마다 항상 빈 상태로 임시 초기화합니다.
 if 'custom_ratings' not in st.session_state:
     st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
-    # 이미 등록되어 있는 영화가 있다면 평점 구조틀을 잡아줍니다.
     for title in st.session_state['custom_movies']['title'].tolist():
         for user in st.session_state['custom_ratings']:
             st.session_state['custom_ratings'][user][title] = np.nan
@@ -254,8 +253,8 @@ elif st.session_state['current_page'] == 'page_collaborative':
     st.header("2️⃣ 협업 필터링")
     movies_db = st.session_state['custom_movies']
     
-    st.write("### 🎲 기존 가상 인구 집단의 평점 매핑")
-    if st.button("타 유저 평점 데이터 랜덤 제너레이트"):
+    st.write("### 🎲 가상 유저들의 평점 기록")
+    if st.button("다른 유저 평점 무작위 생성"):
         for user in ['기존유저A', '기존유저B']:
             st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
         st.rerun()
@@ -316,8 +315,6 @@ elif st.session_state['current_page'] == 'page_collaborative':
                 if score == 0:
                     st.error("⚠️ 데이터 희소성으로 이 영화를 평가한 다른 유저 세트가 없어 연산이 제한됩니다 (콜드 스타트).")
             st.markdown("---")
-    else:
-        st.warning("추천을 보려면 최소 1개의 영화는 평점을 주고, 1개 이상의 영화는 '안봄(NaN)' 상태로 두세요.")
 
 
 # ==========================================
@@ -358,9 +355,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
     hybrid_df['final_score'] = (hybrid_df['content'] * (w_content / 100)) + (hybrid_df['collaborative'] * (w_collab / 100))
     
     final_rank = hybrid_df.drop(target_movie, errors='ignore').sort_values(by='final_score', ascending=False)
-    
-    if collab_scores.sum() == 0:
-        st.warning("🚨 **[전환 방식 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 줄거리/장르 메커니즘이 안전장치로 전면 대체 구동됩니다.")
 
     st.subheader("🎯 하이브리드 엔진 종합 스코어 랭킹")
     if final_rank.empty:
