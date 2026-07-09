@@ -81,7 +81,7 @@ def search_movie_tmdb(query):
             if not genres:
                 genres = "장르 정보 없음"
             
-            # 장르를 강력하게 인식하도록 중첩
+            # 장르를 강력하게 인식하도록 중첩 (가중치 극대화)
             boosted_features = f"{genres} {genres} {genres} {genres} {plot}"
             
             return {
@@ -124,42 +124,42 @@ if st.session_state['current_page'] == 'main':
                 st.error("검색할 영화 제목을 입력하세요.")
         
         st.write("")
-        # 🎯 영화 검색/등록 아래 바로 위치한 랜덤 버튼
-        if st.button("🎲 랜덤 영화 데이터셋 자동 등록", type="secondary", use_container_width=True):
-            group1 = ["토이 스토리", "주토피아", "인사이드 아웃", "슈렉"]
-            group2 = ["인터스텔라", "인셉션", "마션", "테넷"]
-            group3 = ["곤지암", "겟 아웃", "컨저링", "파묘"]
-            group4 = ["라라랜드", "비포 선라이즈", "어바웃 타임", "뷰티 인사이드"]
-            group5 = ["어벤져스", "다크 나이트", "범죄도시", "매트릭스"]
+        # 🎯 극단적 알고리즘 결과 산출을 위한 3종 데이터셋 자동 등록 버튼
+        if st.button("🎲 극적인 비교용 3종 영화 데이터셋 자동 등록", type="secondary", use_container_width=True):
+            # 콘텐츠/장르 특성이 극단적으로 대비되는 3개 그룹 (애니메이션 / 공포 / SF)
+            group_animation = ["토이 스토리", "주토피아", "인사이드 아웃"]
+            group_horror = ["곤지암", "컨저링", "파묘"]
+            group_sf = ["인터스텔라", "인셉션", "테넷"]
             
             selected_queries = [
-                random.choice(group1),
-                random.choice(group2),
-                random.choice(group3),
-                random.choice(group4),
-                random.choice(group5)
+                random.choice(group_animation),
+                random.choice(group_horror),
+                random.choice(group_sf)
             ]
             
             new_movies = []
-            with st.spinner("랜덤 영화 5종을 TMDB API에서 가져오는 중..."):
+            with st.spinner("극단적 수치 비교를 위해 TMDB API에서 영화 3종을 가져오는 중..."):
                 for q in selected_queries:
                     m_info = search_movie_tmdb(q)
                     if m_info:
                         new_movies.append(m_info)
             
-            if new_movies:
+            if len(new_movies) == 3:
                 df_new = pd.DataFrame(new_movies)
                 df_new['id'] = range(1, len(df_new) + 1)
                 st.session_state['custom_movies'] = df_new
                 
                 t = [m['title'] for m in new_movies]
+                
+                # 🔥 극단적인 알고리즘 수치 편차를 만드는 평점 매핑
+                # [0번: 애니메이션], [1번: 공포], [2번: SF]
                 st.session_state['custom_ratings'] = {
-                    '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0, t[3]: 5.0, t[4]: 4.0},
-                    '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0, t[3]: 2.0, t[4]: 5.0},
-                    '나': {t[0]: 5.0, t[1]: np.nan, t[2]: np.nan, t[3]: 4.0, t[4]: np.nan}
+                    '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0},   # 극단적 애니 매니아
+                    '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0},   # 극단적 공포/SF 매니아
+                    '나':         {t[0]: 5.0, t[1]: 1.0, t[2]: np.nan} # 나는 애니 5.0(최애), 공포 1.0(극혐), SF 안봄(NaN)
                 }
                 save_local_data()
-                st.success("🎉 랜덤 영화 5종이 영화 보관함에 추가되었습니다!")
+                st.success("🎉 극단적인 수치 비교가 가능한 영화 3종 데이터셋이 등록되었습니다!")
                 st.rerun()
 
         if st.session_state['search_result']:
