@@ -7,30 +7,27 @@ import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# 0. 영구 저장용 JSON 로드/저장 함수 정의
+# 0. 영구 저장용 JSON 로드/저장 함수 정의 (영화 보관함만 저장!)
 STORAGE_FILE = "movie_storage.json"
 
 def load_local_data():
-    """로컬 파일에서 데이터를 불러와 세션 상태에 초기화"""
+    """로컬 파일에서 영화 보관함 데이터만 불러와 세션 상태에 초기화"""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 st.session_state['custom_movies'] = pd.DataFrame(data.get('movies', []))
-                st.session_state['custom_ratings'] = data.get('ratings', {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}})
                 return
         except Exception as e:
             pass
             
     # 파일이 없거나 에러 발생 시 초기값 세팅
     st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
-    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
 
 def save_local_data():
-    """현재 세션 상태의 데이터를 로컬 파일에 저장"""
+    """현재 영화 보관함 데이터만 로컬 파일에 저장"""
     data = {
-        'movies': st.session_state['custom_movies'].to_dict(orient='records'),
-        'ratings': st.session_state['custom_ratings']
+        'movies': st.session_state['custom_movies'].to_dict(orient='records')
     }
     with open(STORAGE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -46,9 +43,17 @@ if 'current_page' not in st.session_state:
 if 'search_result' not in st.session_state:
     st.session_state['search_result'] = None
 
-# 프로그램 시작 시 영구 저장된 데이터 불러오기
-if 'custom_movies' not in st.session_state or 'custom_ratings' not in st.session_state:
+# 프로그램 시작 시 영구 저장된 영화 보관함 불러오기
+if 'custom_movies' not in st.session_state:
     load_local_data()
+
+# 💡 중요: 평점 데이터는 파일에 저장하지 않고, 창을 켤 때마다 항상 빈 상태로 임시 초기화합니다.
+if 'custom_ratings' not in st.session_state:
+    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+    # 이미 등록되어 있는 영화가 있다면 평점 구조틀을 잡아줍니다.
+    for title in st.session_state['custom_movies']['title'].tolist():
+        for user in st.session_state['custom_ratings']:
+            st.session_state['custom_ratings'][user][title] = np.nan
 
 
 # TMDB API 호출 함수
@@ -126,7 +131,7 @@ if st.session_state['current_page'] == 'main':
                         if res['title'] not in st.session_state['custom_ratings'][user]:
                             st.session_state['custom_ratings'][user][res['title']] = np.nan
                     
-                    # 파일에 영구 저장
+                    # 영화 보관함만 파일에 영구 저장
                     save_local_data()
                             
                     st.success(f"🎉 [{res['title']}] 영화 보관함 등록 성공! (창을 닫아도 보존됩니다)")
@@ -156,7 +161,7 @@ if st.session_state['current_page'] == 'main':
                             if row['title'] in st.session_state['custom_ratings'][user]:
                                 del st.session_state['custom_ratings'][user][row['title']]
                         
-                        # 변경사항 영구 저장
+                        # 변경사항 파일 저장
                         save_local_data()
                         st.rerun()
             
@@ -253,7 +258,6 @@ elif st.session_state['current_page'] == 'page_collaborative':
     if st.button("타 유저 평점 데이터 랜덤 제너레이트"):
         for user in ['기존유저A', '기존유저B']:
             st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
-        save_local_data()
         st.rerun()
             
     st.write("### 👤 내 실제 영화 관람 평점 입력")
@@ -273,7 +277,6 @@ elif st.session_state['current_page'] == 'page_collaborative':
         
     if changed:
         st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
-        save_local_data()
     
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     st.write("#### 📊 실시간 영화 평점 현황판")
