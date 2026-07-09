@@ -58,7 +58,7 @@ for title in st.session_state['custom_movies']['title'].tolist():
         if title not in st.session_state['custom_ratings'][user]:
             st.session_state['custom_ratings'][user][title] = np.nan
 
-# TMDB API 검색 함수 (콘텐츠 유사도 극대화를 위해 장르 가중 부스팅 적용)
+# TMDB API 검색 함수
 def search_movie_tmdb(query):
     if not TMDB_API_KEY or TMDB_API_KEY == "여기에_발급받은_API키를_넣으세요":
         st.error("API 키를 등록해주세요.")
@@ -81,7 +81,6 @@ def search_movie_tmdb(query):
             if not genres:
                 genres = "장르 정보 없음"
             
-            # 장르를 강력하게 인식하도록 중첩 (가중치 극대화)
             boosted_features = f"{genres} {genres} {genres} {genres} {plot}"
             
             return {
@@ -124,9 +123,8 @@ if st.session_state['current_page'] == 'main':
                 st.error("검색할 영화 제목을 입력하세요.")
         
         st.write("")
-        # 🎯 극단적 알고리즘 결과 산출을 위한 3종 데이터셋 자동 등록 버튼
-        if st.button("🎲 극적인 비교용 3종 영화 데이터셋 자동 등록", type="secondary", use_container_width=True):
-            # 콘텐츠/장르 특성이 극단적으로 대비되는 3개 그룹 (애니메이션 / 공포 / SF)
+        # 버튼 명칭 원복: 3개 영화 등록
+        if st.button("🎲 랜덤 영화 데이터셋 자동 등록", type="secondary", use_container_width=True):
             group_animation = ["토이 스토리", "주토피아", "인사이드 아웃"]
             group_horror = ["곤지암", "컨저링", "파묘"]
             group_sf = ["인터스텔라", "인셉션", "테넷"]
@@ -138,7 +136,7 @@ if st.session_state['current_page'] == 'main':
             ]
             
             new_movies = []
-            with st.spinner("극단적 수치 비교를 위해 TMDB API에서 영화 3종을 가져오는 중..."):
+            with st.spinner("TMDB API에서 영화 3종을 가져오는 중..."):
                 for q in selected_queries:
                     m_info = search_movie_tmdb(q)
                     if m_info:
@@ -151,15 +149,13 @@ if st.session_state['current_page'] == 'main':
                 
                 t = [m['title'] for m in new_movies]
                 
-                # 🔥 극단적인 알고리즘 수치 편차를 만드는 평점 매핑
-                # [0번: 애니메이션], [1번: 공포], [2번: SF]
                 st.session_state['custom_ratings'] = {
-                    '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0},   # 극단적 애니 매니아
-                    '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0},   # 극단적 공포/SF 매니아
-                    '나':         {t[0]: 5.0, t[1]: 1.0, t[2]: np.nan} # 나는 애니 5.0(최애), 공포 1.0(극혐), SF 안봄(NaN)
+                    '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0},
+                    '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0},
+                    '나':         {t[0]: 5.0, t[1]: 1.0, t[2]: np.nan}
                 }
                 save_local_data()
-                st.success("🎉 극단적인 수치 비교가 가능한 영화 3종 데이터셋이 등록되었습니다!")
+                st.success("🎉 랜덤 영화 3종이 영화 보관함에 추가되었습니다!")
                 st.rerun()
 
         if st.session_state['search_result']:
@@ -304,7 +300,7 @@ elif st.session_state['current_page'] == 'page_content':
 
 
 # ==========================================
-# 📄 화면 2: 협업 필터링 페이지
+# 📄 화면 2: 협업 필터링 페이지 (실시간 갱신 및 계산 오류 수정)
 # ==========================================
 elif st.session_state['current_page'] == 'page_collaborative':
     if st.button("⬅️ 메인 페이지로 돌아가기"):
@@ -317,52 +313,74 @@ elif st.session_state['current_page'] == 'page_collaborative':
     st.write("### 🎲 가상 유저들의 평점 기록")
     if st.button("다른 유저 평점 무작위 생성"):
         for user in ['다른 관객1', '다른 관객2']:
-            st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
+            st.session_state['custom_ratings'][user] = {
+                title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()
+            }
+        save_local_data()
         st.rerun()
             
     st.write("### 👤 내 실제 영화 관람 평점 입력")
     my_ratings = st.session_state['custom_ratings'].get('나', {})
     
-    changed = False
+    # 평점 변경 시 세션 업데이트 및 즉시 리런(rerun) 처리
     for idx, row in movies_db.iterrows():
-        current_val = my_ratings.get(row['title'], np.nan)
+        title = row['title']
+        current_val = my_ratings.get(title, np.nan)
         default_idx = 0 if pd.isna(current_val) else int(current_val)
         
-        score = st.selectbox(f"[{row['title']}] 영화에 내 평점은?", ["안봄(NaN)", "1", "2", "3", "4", "5"], index=default_idx, key=f"collab_rat_{row['title']}")
+        score = st.selectbox(
+            f"[{title}] 영화에 내 평점은?", 
+            ["안봄(NaN)", "1", "2", "3", "4", "5"], 
+            index=default_idx, 
+            key=f"collab_rat_{title}"
+        )
         new_val = np.nan if score == "안봄(NaN)" else float(score)
         
+        # 값이 바뀌었을 때만 업데이트 및 리런
         if str(current_val) != str(new_val):
-            my_ratings[row['title']] = new_val
-            changed = True
-        
-    if changed:
-        st.session_state['custom_ratings']['나'] = my_ratings
-    
+            st.session_state['custom_ratings']['나'][title] = new_val
+            save_local_data()
+            st.rerun()
+
+    # 실시간 평점 데이터프레임 구성
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     st.write("#### 📊 실시간 영화 평점 현황판")
     st.dataframe(ratings_df)
     
-    interaction_matrix = ratings_df.fillna(0)
-    item_similarity = cosine_similarity(interaction_matrix)
-    item_sim_df = pd.DataFrame(item_similarity, index=interaction_matrix.index, columns=interaction_matrix.index)
+    # 협업 필터링 연산 (사용자 기반 / 아이템 기반 혼합 유사도 적용)
+    # NaN은 0으로 처리하되, 유저 간/아이템 간 유사도 계산 시 활용
+    ratings_matrix = ratings_df.fillna(0)
     
-    watched_movies = [m for m, r in my_ratings.items() if not pd.isna(r)]
-    unwatched_movies = [m for m, r in my_ratings.items() if pd.isna(r)]
+    # 유저 간 코사인 유사도 계산
+    user_sim = cosine_similarity(ratings_matrix.T)
+    user_sim_df = pd.DataFrame(user_sim, index=ratings_df.columns, columns=ratings_df.columns)
     
-    if watched_movies and unwatched_movies:
+    my_ratings_series = ratings_df['나']
+    watched_movies = my_ratings_series.dropna().index.tolist()
+    unwatched_movies = [m for m in movies_db['title'].tolist() if pd.isna(my_ratings_series.get(m, np.nan))]
+    
+    if unwatched_movies and watched_movies:
+        st.subheader("🎯 집단 행동 패턴 분석 기반 예상 별점 결과")
+        
         predictions = {}
+        # 내 평가 패턴과 가장 유사한 '다른 관객'의 평점 가중 평균
         for movie in unwatched_movies:
             sim_sum = 0
             weighted_rating_sum = 0
-            for watched_movie in watched_movies:
-                if movie in item_sim_df.index and watched_movie in item_sim_df.columns:
-                    sim = item_sim_df.loc[movie, watched_movie]
-                    rating = my_ratings[watched_movie]
-                    sim_sum += sim
-                    weighted_rating_sum += (sim * rating)
-            predictions[movie] = weighted_rating_sum / sim_sum if sim_sum > 0 else 0
             
-        st.subheader("🎯 집단 행동 패턴 분석 기반 예상 별점 결과")
+            for other_user in ['다른 관객1', '다른 관객2']:
+                u_sim = user_sim_df.loc['나', other_user]
+                other_rating = ratings_df.loc[movie, other_user]
+                
+                if not pd.isna(other_rating) and u_sim > 0:
+                    weighted_rating_sum += u_sim * other_rating
+                    sim_sum += u_sim
+                    
+            if sim_sum > 0:
+                predictions[movie] = weighted_rating_sum / sim_sum
+            else:
+                predictions[movie] = 0.0
+
         for movie, score in sorted(predictions.items(), key=lambda x: x[1], reverse=True):
             target_rows = movies_db[movies_db['title'] == movie]
             if target_rows.empty: continue
@@ -374,8 +392,12 @@ elif st.session_state['current_page'] == 'page_collaborative':
             with c2:
                 st.write(f"### **{movie}** (예측 평점 점수: `{score:.2f}` 점)")
                 if score == 0:
-                    st.error("⚠️ 데이터 희소성으로 이 영화를 평가한 다른 유저 세트가 없어 연산이 제한됩니다 (콜드 스타트).")
+                    st.warning("⚠️ 유저 간 유사도가 낮거나 데이터가 부족하여 평점 예측 계산이 제한됩니다 (콜드 스타트).")
             st.markdown("---")
+    elif not watched_movies:
+        st.info("💡 위의 선택 상자에서 최소 1개 이상의 영화에 평점을 매겨주셔야 예상 별점이 계산됩니다.")
+    elif not unwatched_movies:
+        st.info("💡 보관함의 모든 영화에 평점을 입력하셨습니다.")
 
 
 # ==========================================
