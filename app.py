@@ -11,7 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 STORAGE_FILE = "movie_storage.json"
 
 def load_local_data():
-    """로컬 파일에서 영화 보관함 데이터 불러오기 (구버전 호환)"""
+    """로컬 파일에서 영화 보관함 데이터 불러오기"""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
@@ -58,7 +58,7 @@ for title in st.session_state['custom_movies']['title'].tolist():
         if title not in st.session_state['custom_ratings'][user]:
             st.session_state['custom_ratings'][user][title] = np.nan
 
-# TMDB API 검색 함수 (장르/줄거리 분리 수집)
+# TMDB API 검색 함수 (콘텐츠 유사도 극대화를 위해 장르 가중 부스팅 적용)
 def search_movie_tmdb(query):
     if not TMDB_API_KEY or TMDB_API_KEY == "여기에_발급받은_API키를_넣으세요":
         st.error("API 키를 등록해주세요.")
@@ -81,11 +81,14 @@ def search_movie_tmdb(query):
             if not genres:
                 genres = "장르 정보 없음"
             
+            # 장르를 강력하게 인식하도록 중첩
+            boosted_features = f"{genres} {genres} {genres} {genres} {plot}"
+            
             return {
                 "title": title, 
                 "genre": genres, 
                 "overview": plot, 
-                "features": f"{genres} {plot}", 
+                "features": boosted_features, 
                 "poster": poster_url
             }
     except Exception as e:
@@ -93,7 +96,7 @@ def search_movie_tmdb(query):
     return None
 
 # ==========================================
-# 📄 화면 0: 메인 페이지 (영화 보관함 옆 컴팩트 버튼 적용)
+# 📄 화면 0: 메인 페이지
 # ==========================================
 if st.session_state['current_page'] == 'main':
     st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
@@ -120,6 +123,45 @@ if st.session_state['current_page'] == 'main':
             else:
                 st.error("검색할 영화 제목을 입력하세요.")
         
+        st.write("")
+        # 🎯 영화 검색/등록 아래 바로 위치한 랜덤 버튼
+        if st.button("🎲 랜덤 영화 데이터셋 자동 등록", type="secondary", use_container_width=True):
+            group1 = ["토이 스토리", "주토피아", "인사이드 아웃", "슈렉"]
+            group2 = ["인터스텔라", "인셉션", "마션", "테넷"]
+            group3 = ["곤지암", "겟 아웃", "컨저링", "파묘"]
+            group4 = ["라라랜드", "비포 선라이즈", "어바웃 타임", "뷰티 인사이드"]
+            group5 = ["어벤져스", "다크 나이트", "범죄도시", "매트릭스"]
+            
+            selected_queries = [
+                random.choice(group1),
+                random.choice(group2),
+                random.choice(group3),
+                random.choice(group4),
+                random.choice(group5)
+            ]
+            
+            new_movies = []
+            with st.spinner("랜덤 영화 5종을 TMDB API에서 가져오는 중..."):
+                for q in selected_queries:
+                    m_info = search_movie_tmdb(q)
+                    if m_info:
+                        new_movies.append(m_info)
+            
+            if new_movies:
+                df_new = pd.DataFrame(new_movies)
+                df_new['id'] = range(1, len(df_new) + 1)
+                st.session_state['custom_movies'] = df_new
+                
+                t = [m['title'] for m in new_movies]
+                st.session_state['custom_ratings'] = {
+                    '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0, t[3]: 5.0, t[4]: 4.0},
+                    '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0, t[3]: 2.0, t[4]: 5.0},
+                    '나': {t[0]: 5.0, t[1]: np.nan, t[2]: np.nan, t[3]: 4.0, t[4]: np.nan}
+                }
+                save_local_data()
+                st.success("🎉 랜덤 영화 5종이 영화 보관함에 추가되었습니다!")
+                st.rerun()
+
         if st.session_state['search_result']:
             res = st.session_state['search_result']
             st.markdown("---")
@@ -131,7 +173,7 @@ if st.session_state['current_page'] == 'main':
                     st.image(res['poster'], width=120)
             with preview_col2:
                 st.write(f"#### **{res['title']}**")
-                st.caption(f"**데이터 내용:** {res['features'][:120]}...")
+                st.caption(f"**장르:** {res['genre']}")
             
             if st.button(f"➕ [{res['title']}]을 영화 보관함에 등록하기", type="primary", use_container_width=True):
                 if res['title'] not in st.session_state['custom_movies']['title'].tolist():
@@ -150,55 +192,14 @@ if st.session_state['current_page'] == 'main':
                         st.session_state['custom_ratings'][user][res['title']] = np.nan
                     
                     save_local_data()
-                    st.success(f"🎉 [{res['title']}] 영화 보관함 등록 성공! (창을 닫아도 보존됩니다)")
+                    st.success(f"🎉 [{res['title']}] 영화 보관함 등록 성공!")
                     st.session_state['search_result'] = None
                     st.rerun()
                 else:
                     st.warning("⚠️ 이미 영화 보관함에 등록된 영화입니다.")
                 
     with col_in2:
-        # 영화 보관함 헤더 및 컴팩트 데모 세팅 버튼 상단 배치
-        header_col1, header_col2 = st.columns([2, 1])
-        with header_col1:
-            st.write("**현재 API로 구축된 영화 보관함:**")
-        with header_col2:
-            # 보관함 우측 상단 작고 깔끔한 세팅 버튼
-            if st.button("✨ 데모 데이터 자동 구성", type="secondary", help="추천 알고리즘 시연용 샘플 데이터를 구축합니다."):
-                group1 = ["토이 스토리", "주토피아", "인사이드 아웃", "슈렉"]
-                group2 = ["인터스텔라", "인셉션", "마션", "테넷"]
-                group3 = ["곤지암", "겟 아웃", "컨저링", "파묘"]
-                group4 = ["라라랜드", "비포 선라이즈", "어바웃 타임", "뷰티 인사이드"]
-                group5 = ["어벤져스", "다크 나이트", "범죄도시", "매트릭스"]
-                
-                selected_queries = [
-                    random.choice(group1),
-                    random.choice(group2),
-                    random.choice(group3),
-                    random.choice(group4),
-                    random.choice(group5)
-                ]
-                
-                new_movies = []
-                with st.spinner("데모 데이터를 구성하는 중..."):
-                    for q in selected_queries:
-                        m_info = search_movie_tmdb(q)
-                        if m_info:
-                            new_movies.append(m_info)
-                
-                if new_movies:
-                    df_new = pd.DataFrame(new_movies)
-                    df_new['id'] = range(1, len(df_new) + 1)
-                    st.session_state['custom_movies'] = df_new
-                    
-                    t = [m['title'] for m in new_movies]
-                    st.session_state['custom_ratings'] = {
-                        '다른 관객1': {t[0]: 5.0, t[1]: 1.0, t[2]: 1.0, t[3]: 5.0, t[4]: 4.0},
-                        '다른 관객2': {t[0]: 1.0, t[1]: 5.0, t[2]: 5.0, t[3]: 2.0, t[4]: 5.0},
-                        '나': {t[0]: 5.0, t[1]: np.nan, t[2]: np.nan, t[3]: 4.0, t[4]: np.nan}
-                    }
-                    save_local_data()
-                    st.rerun()
-
+        st.write("**현재 API로 구축된 영화 보관함:**")
         if len(st.session_state['custom_movies']) == 0:
             st.info("아직 등록된 영화가 없습니다.")
         else:
@@ -296,7 +297,7 @@ elif st.session_state['current_page'] == 'page_content':
                         if row['poster']: st.image(row['poster'], width=120)
                     with c2:
                         st.write(f"### **{row['title']}** (유사도 매칭 점수: `{row['similarity']:.2f}`)")
-                        st.write(f"💬 **[추천 이유 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
+                        st.write(f"💬 **[추천 이유 요약]:** 이 영화의 메타데이터(장르 및 특성 키워드) 분석 결과가 과거 선호 영화 패턴과 강하게 일치하여 추천되었습니다.")
                     st.markdown("---")
         except Exception as e:
             st.error(f"분석 중 오류가 발생했습니다: {e}")
