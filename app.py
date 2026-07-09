@@ -10,14 +10,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 STORAGE_FILE = "movie_storage.json"
 
 def load_local_data():
-    """로컬 파일에서 영화 보관함 데이터 불러오기 (구버전 데이터 데이터 구조 호환)"""
+    """로컬 파일에서 영화 보관함 데이터 불러오기 (구버전 호환)"""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 df = pd.DataFrame(data.get('movies', []))
                 
-                # 구버전 json 파일과의 호환성을 위한 컬럼 누락 방지 로직
+                # 컬럼 누락 방지 로직
                 for col in ["id", "title", "genre", "overview", "features", "poster"]:
                     if col not in df.columns:
                         df[col] = "" if col != "id" else 0
@@ -93,7 +93,7 @@ def search_movie_tmdb(query):
     return None
 
 # ==========================================
-# 📄 화면 0: 메인 페이지 (디자인 원본 복원)
+# 📄 화면 0: 메인 페이지 (원래 디자인 원본)
 # ==========================================
 if st.session_state['current_page'] == 'main':
     st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
@@ -232,8 +232,8 @@ elif st.session_state['current_page'] == 'page_content':
     
     if user_history:
         try:
-            tfidf = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-            tfidf_matrix = tfidf.fit_transform(movies_db['features'])
+            tfidf = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b", min_df=1)
+            tfidf_matrix = tfidf.fit_transform(movies_db['features'].fillna(''))
             cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
             
             user_movie_indices = movies_db[movies_db['title'].isin(user_history)].index
@@ -256,8 +256,8 @@ elif st.session_state['current_page'] == 'page_content':
                         st.write(f"### **{row['title']}** (유사도 매칭 점수: `{row['similarity']:.2f}`)")
                         st.write(f"💬 **[추천 이유 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
                     st.markdown("---")
-        except Exception:
-            st.error("분석 중 오류가 발생했습니다. 데이터가 충분한지 확인해 주세요.")
+        except Exception as e:
+            st.error(f"분석 중 오류가 발생했습니다: {e}")
 
 
 # ==========================================
@@ -336,7 +336,7 @@ elif st.session_state['current_page'] == 'page_collaborative':
 
 
 # ==========================================
-# 📄 화면 3: 하이브리드 추천 시스템 페이지 (안전하게 컬럼 참조)
+# 📄 화면 3: 하이브리드 추천 페이지 (완벽 에러 예방 방어 코드 반영)
 # ==========================================
 elif st.session_state['current_page'] == 'page_hybrid':
     if st.button("⬅️ 메인 페이지로 돌아가기"):
@@ -353,22 +353,26 @@ elif st.session_state['current_page'] == 'page_hybrid':
     target_movie = st.selectbox("추천 알고리즘의 기준점이 될 메인 영화 선택:", movies_db['title'].tolist())
     
     try:
-        # 1. 콘텐츠 전체 유사도 연산
-        tfidf = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        tfidf_matrix = tfidf.fit_transform(movies_db['features'].fillna(''))
-        cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+        # 0. Empty Vocabulary 완벽 방지 안전 TF-IDF 연산 함수
+        def safe_tfidf_sim(series_data):
+            cleaned_data = series_data.fillna('').astype(str).str.strip()
+            if cleaned_data.str.cat().strip() == "":
+                return np.zeros((len(series_data), len(series_data)))
+            try:
+                tfidf = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b", min_df=1)
+                tfidf_matrix = tfidf.fit_transform(cleaned_data)
+                return cosine_similarity(tfidf_matrix, tfidf_matrix)
+            except ValueError:
+                return np.zeros((len(series_data), len(series_data)))
+
+        # 1. 안전하게 각각의 유사도 연산
+        cosine_sim = safe_tfidf_sim(movies_db['features'])
         
-        # 2. 장르 세부 유사도 연산 (데이터 누락 대비 안전하게 fillna 처리)
-        genre_data = movies_db['genre'].fillna('') if 'genre' in movies_db.columns else pd.Series(['']*len(movies_db))
-        tfidf_genre = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        genre_matrix = tfidf_genre.fit_transform(genre_data)
-        genre_sim = cosine_similarity(genre_matrix, genre_matrix)
+        genre_data = movies_db['genre'] if 'genre' in movies_db.columns else pd.Series(['']*len(movies_db))
+        genre_sim = safe_tfidf_sim(genre_data)
         
-        # 3. 줄거리 세부 유사도 연산 (데이터 누락 대비 안전하게 fillna 처리)
-        overview_data = movies_db['overview'].fillna('') if 'overview' in movies_db.columns else pd.Series(['']*len(movies_db))
-        tfidf_plot = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        plot_matrix = tfidf_plot.fit_transform(overview_data)
-        plot_sim = cosine_similarity(plot_matrix, plot_matrix)
+        overview_data = movies_db['overview'] if 'overview' in movies_db.columns else pd.Series(['']*len(movies_db))
+        plot_sim = safe_tfidf_sim(overview_data)
         
         movie_idx = movies_db[movies_db['title'] == target_movie].index[0]
         
@@ -376,7 +380,7 @@ elif st.session_state['current_page'] == 'page_hybrid':
         genre_scores = pd.Series(genre_sim[movie_idx], index=movies_db['title'].tolist())
         plot_scores = pd.Series(plot_sim[movie_idx], index=movies_db['title'].tolist())
         
-        # 4. 협업 필터링 유사도 연산
+        # 2. 협업 필터링 유사도 연산
         ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
         interaction_matrix = ratings_df.fillna(0)
         
@@ -387,7 +391,7 @@ elif st.session_state['current_page'] == 'page_hybrid':
         else:
             collab_scores = pd.Series(0.0, index=movies_db['title'].tolist())
             
-        # 5. 스코어 통합
+        # 3. 스코어 통합
         hybrid_df = pd.DataFrame({
             'content': content_scores,
             'genre': genre_scores,
@@ -413,7 +417,7 @@ elif st.session_state['current_page'] == 'page_hybrid':
                 with c2:
                     st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
                     
-                    # 장르 및 줄거리 상세 API 점수 표시
+                    # 상세 API 점수 표시
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("🏷️ 장르 유사 점수", f"{row['genre']:.2f}")
                     m2.metric("📖 줄거리 유사 점수", f"{row['plot']:.2f}")
