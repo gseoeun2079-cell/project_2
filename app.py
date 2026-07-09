@@ -49,7 +49,7 @@ if 'custom_movies' not in st.session_state:
 
 # 평점 데이터는 파일에 저장하지 않고, 창을 켤 때마다 항상 빈 상태로 임시 초기화합니다.
 if 'custom_ratings' not in st.session_state:
-    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+    st.session_state['custom_ratings'] = {'다른 관객1': {}, '다른 관객2': {}, '나': {}}
     for title in st.session_state['custom_movies']['title'].tolist():
         for user in st.session_state['custom_ratings']:
             st.session_state['custom_ratings'][user][title] = np.nan
@@ -167,7 +167,7 @@ if st.session_state['current_page'] == 'main':
             st.write("")
             if st.button("🗑️ 영화 보관함 데이터 전체 초기화", use_container_width=True):
                 st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
-                st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+                st.session_state['custom_ratings'] = {'다른 관객1': {}, '다른 관객2': {}, '나': {}}
                 st.session_state['search_result'] = None
                 
                 if os.path.exists(STORAGE_FILE):
@@ -255,12 +255,12 @@ elif st.session_state['current_page'] == 'page_collaborative':
     
     st.write("### 🎲 가상 유저들의 평점 기록")
     if st.button("다른 유저 평점 무작위 생성"):
-        for user in ['기존유저A', '기존유저B']:
+        for user in ['다른 관객1', '다른 관객2']:
             st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
         st.rerun()
             
     st.write("### 👤 내 실제 영화 관람 평점 입력")
-    my_ratings = st.session_state['custom_ratings'].get('나(타겟유저)', {})
+    my_ratings = st.session_state['custom_ratings'].get('나', {})
     
     changed = False
     for idx, row in movies_db.iterrows():
@@ -275,7 +275,7 @@ elif st.session_state['current_page'] == 'page_collaborative':
             changed = True
         
     if changed:
-        st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
+        st.session_state['custom_ratings']['나'] = my_ratings
     
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     st.write("#### 📊 실시간 영화 평점 현황판")
