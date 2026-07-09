@@ -10,12 +10,19 @@ from sklearn.metrics.pairwise import cosine_similarity
 STORAGE_FILE = "movie_storage.json"
 
 def load_local_data():
-    """로컬 파일에서 영화 보관함 데이터 불러오기"""
+    """로컬 파일에서 영화 보관함 데이터 불러오기 (구버전 데이터 데이터 구조 호환)"""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                st.session_state['custom_movies'] = pd.DataFrame(data.get('movies', []))
+                df = pd.DataFrame(data.get('movies', []))
+                
+                # 구버전 json 파일과의 호환성을 위한 컬럼 누락 방지 로직
+                for col in ["id", "title", "genre", "overview", "features", "poster"]:
+                    if col not in df.columns:
+                        df[col] = "" if col != "id" else 0
+                        
+                st.session_state['custom_movies'] = df
                 return
         except Exception:
             pass
@@ -182,9 +189,6 @@ if st.session_state['current_page'] == 'main':
                     os.remove(STORAGE_FILE)
                 st.rerun()
 
-    # ----------------------------------------------------
-    # 🔥 처음 요청해주셨던 2단계 디자인 완전 원본 복원 영역
-    # ----------------------------------------------------
     st.markdown("---")
     st.subheader("🚀 2단계: 알고리즘 프로그램 실행")
     
@@ -332,7 +336,7 @@ elif st.session_state['current_page'] == 'page_collaborative':
 
 
 # ==========================================
-# 📄 화면 3: 하이브리드 추천 시스템 페이지 (API 상세 점수 추가)
+# 📄 화면 3: 하이브리드 추천 시스템 페이지 (안전하게 컬럼 참조)
 # ==========================================
 elif st.session_state['current_page'] == 'page_hybrid':
     if st.button("⬅️ 메인 페이지로 돌아가기"):
@@ -351,17 +355,19 @@ elif st.session_state['current_page'] == 'page_hybrid':
     try:
         # 1. 콘텐츠 전체 유사도 연산
         tfidf = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        tfidf_matrix = tfidf.fit_transform(movies_db['features'])
+        tfidf_matrix = tfidf.fit_transform(movies_db['features'].fillna(''))
         cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
         
-        # 2. 장르 세부 유사도 연산
+        # 2. 장르 세부 유사도 연산 (데이터 누락 대비 안전하게 fillna 처리)
+        genre_data = movies_db['genre'].fillna('') if 'genre' in movies_db.columns else pd.Series(['']*len(movies_db))
         tfidf_genre = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        genre_matrix = tfidf_genre.fit_transform(movies_db['genre'].fillna(''))
+        genre_matrix = tfidf_genre.fit_transform(genre_data)
         genre_sim = cosine_similarity(genre_matrix, genre_matrix)
         
-        # 3. 줄거리 세부 유사도 연산
+        # 3. 줄거리 세부 유사도 연산 (데이터 누락 대비 안전하게 fillna 처리)
+        overview_data = movies_db['overview'].fillna('') if 'overview' in movies_db.columns else pd.Series(['']*len(movies_db))
         tfidf_plot = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b")
-        plot_matrix = tfidf_plot.fit_transform(movies_db['overview'].fillna(''))
+        plot_matrix = tfidf_plot.fit_transform(overview_data)
         plot_sim = cosine_similarity(plot_matrix, plot_matrix)
         
         movie_idx = movies_db[movies_db['title'] == target_movie].index[0]
@@ -407,14 +413,16 @@ elif st.session_state['current_page'] == 'page_hybrid':
                 with c2:
                     st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
                     
-                    # 요청하신 장르 및 줄거리 상세 API 점수 표시
+                    # 장르 및 줄거리 상세 API 점수 표시
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("🏷️ 장르 유사 점수", f"{row['genre']:.2f}")
                     m2.metric("📖 줄거리 유사 점수", f"{row['plot']:.2f}")
                     m3.metric("🧬 메타데이터 점수", f"{row['content']:.2f}")
                     m4.metric("👥 인구집단 점수", f"{row['collaborative']:.2f}")
                     
-                    st.caption(f"📌 **[API 텍스트 분석]:** 장르({target_row['genre']}) | 줄거리({target_row['overview'][:60]}...)")
+                    g_info = target_row.get('genre', '정보없음')
+                    o_info = target_row.get('overview', '')[:60]
+                    st.caption(f"📌 **[API 텍스트 분석]:** 장르({g_info}) | 줄거리({o_info}...)")
                 st.markdown("---")
     except Exception as e:
         st.error(f"연산 중 오류가 발생했습니다: {e}")
