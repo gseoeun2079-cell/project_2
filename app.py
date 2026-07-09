@@ -2,23 +2,54 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import json
+import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+# 0. 영구 저장용 JSON 로드/저장 함수 정의
+STORAGE_FILE = "movie_storage.json"
+
+def load_local_data():
+    """로컬 파일에서 데이터를 불러와 세션 상태에 초기화"""
+    if os.path.exists(STORAGE_FILE):
+        try:
+            with open(STORAGE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                st.session_state['custom_movies'] = pd.DataFrame(data.get('movies', []))
+                st.session_state['custom_ratings'] = data.get('ratings', {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}})
+                return
+        except Exception as e:
+            pass
+            
+    # 파일이 없거나 에러 발생 시 초기값 세팅
+    st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
+    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
+
+def save_local_data():
+    """현재 세션 상태의 데이터를 로컬 파일에 저장"""
+    data = {
+        'movies': st.session_state['custom_movies'].to_dict(orient='records'),
+        'ratings': st.session_state['custom_ratings']
+    }
+    with open(STORAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 # 1. 페이지 설정 및 세션 상태 초기화
 st.set_page_config(page_title="3가지의 알고리즘 영화 추천 시스템", layout="wide")
 
 TMDB_API_KEY = "71f533a402be87b54aea626f2b1ef567" 
 
-# 세션 상태 변수 초기화 (페이지 이동 및 동적 데이터 저장용)
 if 'current_page' not in st.session_state:
     st.session_state['current_page'] = 'main'
-if 'custom_movies' not in st.session_state:
-    st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
-if 'custom_ratings' not in st.session_state:
-    st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
 if 'search_result' not in st.session_state:
     st.session_state['search_result'] = None
+
+# 프로그램 시작 시 영구 저장된 데이터 불러오기
+if 'custom_movies' not in st.session_state or 'custom_ratings' not in st.session_state:
+    load_local_data()
+
 
 # TMDB API 호출 함수
 def search_movie_tmdb(query):
@@ -30,14 +61,13 @@ def search_movie_tmdb(query):
     try:
         response = requests.get(url).json()
         if response.get('results'):
-            movie_data = response['results'][0] # 가장 검색 연관성 높은 첫 번째 영화 선택
+            movie_data = response['results'][0]
             movie_id = movie_data['id']
             title = movie_data['title']
             plot = movie_data['overview'] if movie_data['overview'] else "줄거리 정보 없음"
             poster_path = movie_data['poster_path']
             poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else ""
             
-            # 상세 장르 가져오기
             genre_url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_API_KEY}&language=ko-KR"
             genre_res = requests.get(genre_url).json()
             genres = " ".join([g['name'] for g in genre_res.get('genres', [])])
@@ -47,7 +77,8 @@ def search_movie_tmdb(query):
         st.error(f"API 호출 중 오류 발생: {e}")
     return None
 
-#화면 0: 메인 페이지 (API 영화 검색 및 등록)
+
+# 화면 0: 메인 페이지 (API 영화 검색 및 등록)
 if st.session_state['current_page'] == 'main':
     st.title("🎬 3가지 알고리즘으로 만든 영화 추천 프로그램")
     st.subheader("콘텐츠 기반 · 협업 필터링 · 하이브리드 모델을 활용한 영화 플랫폼")
@@ -58,7 +89,7 @@ if st.session_state['current_page'] == 'main':
     col_in1, col_in2 = st.columns([1, 2])
     
     with col_in1:
-        search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 토이스토리 또는 주토피아")
+        search_query = st.text_input("영화 제목 검색 (한국어/영어 둘 다 가능):", placeholder="예: 토이 스토리 또는 주토피아")
         
         if st.button("🔍 영화 검색하기", use_container_width=True):
             if search_query:
@@ -85,7 +116,7 @@ if st.session_state['current_page'] == 'main':
                 st.write(f"#### **{res['title']}**")
                 st.caption(f"**데이터 내용:** {res['features'][:120]}...")
             
-            if st.button(f"➕ [{res['title']}]을 영화 풀에 등록하기", type="primary", use_container_width=True):
+            if st.button(f"➕ [{res['title']}]을 영화 보관함에 등록하기", type="primary", use_container_width=True):
                 if res['title'] not in st.session_state['custom_movies']['title'].tolist():
                     new_id = len(st.session_state['custom_movies']) + 1
                     new_row = pd.DataFrame([{"id": new_id, "title": res['title'], "features": res['features'], "poster": res['poster']}])
@@ -94,15 +125,18 @@ if st.session_state['current_page'] == 'main':
                     for user in st.session_state['custom_ratings']:
                         if res['title'] not in st.session_state['custom_ratings'][user]:
                             st.session_state['custom_ratings'][user][res['title']] = np.nan
+                    
+                    # 파일에 영구 저장
+                    save_local_data()
                             
-                    st.success(f"🎉 [{res['title']}] 등록 성공!")
+                    st.success(f"🎉 [{res['title']}] 영화 보관함 등록 성공! (창을 닫아도 보존됩니다)")
                     st.session_state['search_result'] = None
                     st.rerun()
                 else:
-                    st.warning("⚠️ 이미 등록된 영화입니다.")
+                    st.warning("⚠️ 이미 영화 보관함에 등록된 영화입니다.")
                 
     with col_in2:
-        st.write("**현재 API로 구축된 내 영화 풀 (Pool):**")
+        st.write("**현재 API로 구축된 영화 보관함:**")
         if len(st.session_state['custom_movies']) == 0:
             st.info("아직 등록된 영화가 없습니다. 왼쪽에 실제 영화를 검색해 채워보세요! (서로 다른 장르로 4개 이상 등록 권장)")
         else:
@@ -115,23 +149,25 @@ if st.session_state['current_page'] == 'main':
                         st.image(row['poster'], width=100)
                     st.caption(f"**{row['title']}**")
                     
-                    # 🌟 [추가] 영화 개별 삭제 버튼 구현
                     if st.button("❌ 삭제", key=f"del_{row['title']}_{idx}", use_container_width=True, type="secondary"):
-                        # 1. 영화 데이터프레임에서 제외
                         st.session_state['custom_movies'] = st.session_state['custom_movies'][st.session_state['custom_movies']['title'] != row['title']].reset_index(drop=True)
                         
-                        # 2. 유저별 평점 사전 파일에서도 연쇄적으로 해당 영화 명단 삭제
                         for user in st.session_state['custom_ratings']:
                             if row['title'] in st.session_state['custom_ratings'][user]:
                                 del st.session_state['custom_ratings'][user][row['title']]
-                                
+                        
+                        # 변경사항 영구 저장
+                        save_local_data()
                         st.rerun()
             
             st.write("")
-            if st.button("🗑️ 영화 데이터 전체 초기화", use_container_width=True):
+            if st.button("🗑️ 영화 보관함 데이터 전체 초기화", use_container_width=True):
                 st.session_state['custom_movies'] = pd.DataFrame(columns=["id", "title", "features", "poster"])
                 st.session_state['custom_ratings'] = {'기존유저A': {}, '기존유저B': {}, '나(타겟유저)': {}}
                 st.session_state['search_result'] = None
+                
+                if os.path.exists(STORAGE_FILE):
+                    os.remove(STORAGE_FILE)
                 st.rerun()
 
     st.markdown("---")
@@ -170,10 +206,10 @@ elif st.session_state['current_page'] == 'page_content':
         st.session_state['current_page'] = 'main'
         st.rerun()
         
-    st.header("1️⃣ 콘텐츠 기반 필터링 (Content-Based Filtering)")
+    st.header("1️⃣ 콘텐츠 기반 필터링")
     movies_db = st.session_state['custom_movies']
     
-    user_history = st.multiselect("당신이 과거에 극장에서 재밌게 본 영화를 선택하세요 (복수 선택 가능):", movies_db['title'].tolist())
+    user_history = st.multiselect("과거에 극장에서 재밌게 본 영화를 선택하세요:", movies_db['title'].tolist())
     
     if user_history:
         tfidf = TfidfVectorizer()
@@ -198,7 +234,7 @@ elif st.session_state['current_page'] == 'page_content':
                     if row['poster']: st.image(row['poster'], width=120)
                 with c2:
                     st.write(f"### **{row['title']}** (유사도 매칭 점수: `{row['similarity']:.2f}`)")
-                    st.write(f"💬 **[설명 가능한 AI 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 유저님의 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
+                    st.write(f"💬 **[추천 이유 요약]:** 이 영화의 API 데이터베이스 요약본(`{row['features'][:70]}...`)이 과거 선호 장르/소재 패턴과 일치하여 추천되었습니다.")
                 st.markdown("---")
 
 
@@ -210,29 +246,37 @@ elif st.session_state['current_page'] == 'page_collaborative':
         st.session_state['current_page'] = 'main'
         st.rerun()
         
-    st.header("2️⃣ 협업 필터링 (Collaborative Filtering)")
+    st.header("2️⃣ 협업 필터링")
     movies_db = st.session_state['custom_movies']
     
-    st.write("### 🎲 1단계: 기존 가상 인구 집단의 평점 매핑")
+    st.write("### 🎲 기존 가상 인구 집단의 평점 매핑")
     if st.button("타 유저 평점 데이터 랜덤 제너레이트"):
         for user in ['기존유저A', '기존유저B']:
             st.session_state['custom_ratings'][user] = {title: np.random.choice([1.0, 2.0, 3.0, 4.0, 5.0, np.nan]) for title in movies_db['title'].tolist()}
+        save_local_data()
         st.rerun()
             
-    st.write("### 👤 2단계: 내 실제 영화 관람 평점 입력")
+    st.write("### 👤 내 실제 영화 관람 평점 입력")
     my_ratings = st.session_state['custom_ratings'].get('나(타겟유저)', {})
     
+    changed = False
     for idx, row in movies_db.iterrows():
         current_val = my_ratings.get(row['title'], np.nan)
         default_idx = 0 if pd.isna(current_val) else int(current_val)
         
         score = st.selectbox(f"[{row['title']}] 영화에 내 평점은?", ["안봄(NaN)", "1", "2", "3", "4", "5"], index=default_idx, key=f"collab_rat_{row['title']}")
-        my_ratings[row['title']] = np.nan if score == "안봄(NaN)" else float(score)
+        new_val = np.nan if score == "안봄(NaN)" else float(score)
         
-    st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
+        if str(current_val) != str(new_val):
+            my_ratings[row['title']] = new_val
+            changed = True
+        
+    if changed:
+        st.session_state['custom_ratings']['나(타겟유저)'] = my_ratings
+        save_local_data()
     
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
-    st.write("#### 📊 생성된 실시간 실물 영화 사용자-아이템 행렬 (User-Item Matrix)")
+    st.write("#### 📊 실시간 영화 평점 현황판")
     st.dataframe(ratings_df)
     
     interaction_matrix = ratings_df.fillna(0)
@@ -268,8 +312,6 @@ elif st.session_state['current_page'] == 'page_collaborative':
                 st.write(f"### **{movie}** (예측 평점 점수: `{score:.2f}` 점)")
                 if score == 0:
                     st.error("⚠️ 데이터 희소성으로 이 영화를 평가한 다른 유저 세트가 없어 연산이 제한됩니다 (콜드 스타트).")
-                else:
-                    st.info("🎁 **[세렌디피티 발동]:** 이 영화의 시놉시스는 알지 못하지만 다른 관객들과의 평점 주파수가 일치하여 뜻밖에 도출된 개인화 영화입니다.")
             st.markdown("---")
     else:
         st.warning("추천을 보려면 최소 1개의 영화는 평점을 주고, 1개 이상의 영화는 '안봄(NaN)' 상태로 두세요.")
@@ -283,16 +325,15 @@ elif st.session_state['current_page'] == 'page_hybrid':
         st.session_state['current_page'] = 'main'
         st.rerun()
         
-    st.header("3️⃣ 하이브리드 추천 시스템 (Hybrid Recommendation)")
+    st.header("3️⃣ 하이브리드 추천 시스템")
     movies_db = st.session_state['custom_movies']
     
-    st.subheader("🎛️ 하이브리드 합성 계수 조절")
-    w_content = st.slider("콘텐츠(줄거리/장르) 가중치 설정 (%)", 0, 100, 50)
+    st.subheader("🎛️ 추천 비율 균형 조절")
+    w_content = st.slider("줄거리/장르 가중치 설정 (%)", 0, 100, 50)
     w_collab = 100 - w_content
     
     target_movie = st.selectbox("추천 알고리즘의 기준점이 될 메인 영화 선택:", movies_db['title'].tolist())
     
-    # 1. 콘텐츠 점수 연산
     tfidf = TfidfVectorizer()
     tfidf_matrix = tfidf.fit_transform(movies_db['features'])
     cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
@@ -300,7 +341,6 @@ elif st.session_state['current_page'] == 'page_hybrid':
     
     content_scores = pd.Series(cosine_sim[movie_idx], index=movies_db['title'].tolist())
     
-    # 2. 협업 점수 연산
     ratings_df = pd.DataFrame(st.session_state['custom_ratings']).reindex(movies_db['title'].tolist())
     interaction_matrix = ratings_df.fillna(0)
     
@@ -311,18 +351,17 @@ elif st.session_state['current_page'] == 'page_hybrid':
     else:
         collab_scores = pd.Series(0.0, index=movies_db['title'].tolist())
         
-    # 3. 종합 하이브리드 스코어링
     hybrid_df = pd.DataFrame({'content': content_scores, 'collaborative': collab_scores}).fillna(0)
     hybrid_df['final_score'] = (hybrid_df['content'] * (w_content / 100)) + (hybrid_df['collaborative'] * (w_collab / 100))
     
     final_rank = hybrid_df.drop(target_movie, errors='ignore').sort_values(by='final_score', ascending=False)
     
     if collab_scores.sum() == 0:
-        st.warning("🚨 **[전환 방식(Switching) 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 콘텐츠 기반 메커니즘이 안전장치로 전면 대체 구동됩니다.")
+        st.warning("🚨 **[전환 방식 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 콘텐츠 기반 메커니즘이 안전장치로 전면 대체 구동됩니다.")
 
     st.subheader("🎯 하이브리드 엔진 종합 스코어 랭킹")
     if final_rank.empty:
-        st.info("비교 분석할 다른 영화가 풀에 존재하지 않습니다.")
+        st.info("비교 분석할 다른 영화가 영화 보관함에 존재하지 않습니다.")
     else:
         for title, row in final_rank.iterrows():
             target_rows = movies_db[movies_db['title'] == title]
@@ -336,3 +375,4 @@ elif st.session_state['current_page'] == 'page_hybrid':
                 st.write(f"### **{title}** (종합 가중 점수: `{row['final_score']:.2f}`)")
                 st.caption(f"🧬 [API 메타 데이터 점수]: {row['content']:.2f}  |  [인구 집단 데이터 점수]: {row['collaborative']:.2f}")
             st.markdown("---")
+
