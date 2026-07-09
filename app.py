@@ -138,7 +138,7 @@ if st.session_state['current_page'] == 'main':
     with col_in2:
         st.write("**현재 API로 구축된 영화 보관함:**")
         if len(st.session_state['custom_movies']) == 0:
-            st.info("아직 등록된 영화가 없습니다. 왼쪽에 실제 영화를 검색해 채워보세요! (서로 다른 장르로 4개 이상 등록 권장)")
+            st.info("아직 등록된 영화가 없습니다.")
         else:
             movies_list = st.session_state['custom_movies']
             cols = st.columns(min(len(movies_list), 4))
@@ -180,19 +180,19 @@ if st.session_state['current_page'] == 'main':
     col1, col2, col3 = st.columns(3)
     with col1:
         st.info("### 1️⃣ 콘텐츠 기반 필터링")
-        st.write("API가 긁어온 실제 영화 줄거리 및 장르 텍스트 데이터를 분석해 추천합니다.")
+        st.write("API가 가져온 실제 영화 줄거리 및 장르 데이터를 분석해 추천합니다.")
         if st.button("콘텐츠 기반 프로그램 열기", use_container_width=True, disabled=disabled_btn):
             st.session_state['current_page'] = 'page_content'
             st.rerun()
     with col2:
         st.success("### 2️⃣ 협업 필터링")
-        st.write("등록한 실제 영화들에 나만의 평점을 부여해 가상의 집단지성 행렬을 구성합니다.")
+        st.write("등록한 실제 영화들에 평점을 부여해 가상의 사용자 평점 데이터를 구성합니다.")
         if st.button("협업 필터링 프로그램 열기", use_container_width=True, disabled=disabled_btn):
             st.session_state['current_page'] = 'page_collaborative'
             st.rerun()
     with col3:
         st.warning("### 3️⃣ 하이브리드 시스템")
-        st.write("콘텐츠 텍스트 스코어와 협업 집단 평점 스코어를 가중 결합하여 하이브리드 추천을 진행합니다.")
+        st.write("줄거리/장르 점수와 사용자 평점 점수를 가중 결합하여 하이브리드 추천을 진행합니다.")
         if st.button("하이브리드 프로그램 열기", use_container_width=True, disabled=disabled_btn):
             st.session_state['current_page'] = 'page_hybrid'
             st.rerun()
@@ -357,7 +357,7 @@ elif st.session_state['current_page'] == 'page_hybrid':
     final_rank = hybrid_df.drop(target_movie, errors='ignore').sort_values(by='final_score', ascending=False)
     
     if collab_scores.sum() == 0:
-        st.warning("🚨 **[전환 방식 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 콘텐츠 기반 메커니즘이 안전장치로 전면 대체 구동됩니다.")
+        st.warning("🚨 **[전환 방식 제어 가동]:** 협업 필터링 행렬 데이터 소스가 비어있거나 평점 정보가 없어 줄거리/장르 메커니즘이 안전장치로 전면 대체 구동됩니다.")
 
     st.subheader("🎯 하이브리드 엔진 종합 스코어 랭킹")
     if final_rank.empty:
